@@ -628,6 +628,19 @@ $avatar = $_SESSION['user_email'] ?? '';
             </a>
             <?php endif; ?>
 
+            <?php if (in_array('Personas', $modulos)): ?>
+            <a href="personas/index.php" class="module-card">
+                <div class="module-icon" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
+                    <i class="bi bi-people-fill"></i>
+                </div>
+                <h3 class="module-title">Redes y Células</h3>
+                <p class="module-description">Gestión de personas, células, asistencia, organigrama y mapa de la iglesia.</p>
+                <div class="module-action">
+                    Acceder al módulo <i class="bi bi-arrow-right"></i>
+                </div>
+            </a>
+            <?php endif; ?>
+
             <?php if (in_array('Presupuesto', $modulos)): ?>
             <a href="presupuesto/index.php" class="module-card">
                 <div class="module-icon" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
