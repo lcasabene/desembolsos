@@ -77,42 +77,50 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-// Obtener reservas pendientes
+// Filtros
+$estado_filtro = $_GET['estado'] ?? 'todos';
+$fecha_filtro = $_GET['fecha'] ?? '';
+
+// Construir consulta base
+$where_conditions = ["1=1"];
+$params = [];
+
+if ($estado_filtro !== 'todos') {
+    $where_conditions[] = "r.estado = ?";
+    $params[] = $estado_filtro;
+}
+
+if (!empty($fecha_filtro)) {
+    $where_conditions[] = "r.fecha = ?";
+    $params[] = $fecha_filtro;
+}
+
+$where_clause = "WHERE " . implode(' AND ', $where_conditions);
+
+// Obtener reservas según filtros
 $stmt = $pdo->prepare("
     SELECT r.*, s.nombre as salon_nombre, s.numero as salon_numero,
            u.nombre as usuario_nombre, u.email as usuario_email
     FROM reservas r
     JOIN salones s ON r.salon_id = s.id
     JOIN usuarios u ON r.usuario_id = u.id
-    WHERE r.estado = 'pendiente'
+    $where_clause
     ORDER BY r.fecha ASC, r.hora_inicio ASC
 ");
-$stmt->execute();
-$reservas_pendientes = $stmt->fetchAll(PDO::FETCH_ASSOC);
+$stmt->execute($params);
+$reservas = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-// Debug - mostrar SQL y resultados
-echo "<!-- Debug SQL: " . $stmt->queryString . " -->";
-echo "<!-- Debug resultados pendientes: " . print_r($reservas_pendientes, true) . " -->";
-
-// Debug - ver todas las reservas
-$stmt_debug = $pdo->query("SELECT COUNT(*) as total FROM reservas");
-$total_reservas = $stmt_debug->fetchColumn();
-echo "<!-- Debug total reservas en BD: $total_reservas -->";
-
-// Debug - ver reservas por estado
-$stmt_debug = $pdo->query("SELECT estado, COUNT(*) as cantidad FROM reservas GROUP BY estado");
-$estados = $stmt_debug->fetchAll(PDO::FETCH_ASSOC);
-echo "<!-- Debug reservas por estado: " . print_r($estados, true) . " -->";
-
-// Obtener estadísticas
-$stmt = $pdo->query("SELECT COUNT(*) FROM reservas WHERE estado = 'pendiente'");
+// Estadísticas
+$stmt = $pdo->query("SELECT COUNT(*) FROM reservas WHERE estado = 'pendiente' AND fecha >= CURDATE()");
 $total_pendientes = $stmt->fetchColumn();
 
 $stmt = $pdo->query("SELECT COUNT(*) FROM reservas WHERE estado = 'aprobada' AND fecha >= CURDATE()");
 $total_aprobadas_futuras = $stmt->fetchColumn();
 
-$stmt = $pdo->query("SELECT COUNT(*) FROM reservas WHERE estado = 'aprobada' AND fecha = CURDATE()");
+$stmt = $pdo->query("SELECT COUNT(*) FROM reservas WHERE fecha = CURDATE() AND estado IN ('aprobada', 'pendiente')");
 $total_hoy = $stmt->fetchColumn();
+
+
 ?>
 
 <!DOCTYPE html>
@@ -129,7 +137,7 @@ $total_hoy = $stmt->fetchColumn();
     <!-- Navbar -->
     <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
         <div class="container">
-            <a class="navbar-brand" href="../menu_instalaciones.php">
+            <a class="navbar-brand" href="../menu_instalaciones_moderno.php">
                 <i class="bi bi-arrow-left"></i> Volver
             </a>
             <div class="navbar-nav ms-auto">
@@ -141,11 +149,44 @@ $total_hoy = $stmt->fetchColumn();
     </nav>
 
     <div class="container py-4">
-        <div class="d-flex justify-content-between align-items-center mb-4">
-            <h2><i class="bi bi-clipboard-check"></i> Aprobación de Reservas</h2>
+        <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-3">
+            <h2 class="mb-0"><i class="bi bi-clipboard-check"></i> Gestión de Reservas</h2>
             <button class="btn btn-success" onclick="aprobarSeleccionadas()" id="btnAprobarMultiple" style="display: none;">
                 <i class="bi bi-check-square"></i> Aprobar Seleccionadas
             </button>
+        </div>
+
+        <!-- Filtros -->
+        <div class="card shadow-sm mb-4">
+            <div class="card-body">
+                <form method="GET" class="row g-3">
+                    <div class="col-md-4">
+                        <label for="estado" class="form-label">Estado</label>
+                        <select class="form-select" id="estado" name="estado" onchange="this.form.submit()">
+                            <option value="todos" <?= ($estado_filtro === 'todos') ? 'selected' : '' ?>>Todos los estados</option>
+                            <option value="pendiente" <?= ($estado_filtro === 'pendiente') ? 'selected' : '' ?>>Pendientes</option>
+                            <option value="aprobada" <?= ($estado_filtro === 'aprobada') ? 'selected' : '' ?>>Aprobadas</option>
+                            <option value="rechazada" <?= ($estado_filtro === 'rechazada') ? 'selected' : '' ?>>Rechazadas</option>
+                            <option value="cancelada" <?= ($estado_filtro === 'cancelada') ? 'selected' : '' ?>>Canceladas</option>
+                        </select>
+                    </div>
+                    <div class="col-md-4">
+                        <label for="fecha" class="form-label">Fecha</label>
+                        <input type="date" class="form-control" id="fecha" name="fecha" value="<?= htmlspecialchars($fecha_filtro) ?>" onchange="this.form.submit()">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">&nbsp;</label>
+                        <div class="d-flex gap-2">
+                            <button type="button" class="btn btn-outline-secondary" onclick="limpiarFiltros()">
+                                <i class="bi bi-x-circle"></i> Limpiar
+                            </button>
+                            <a href="aprobaciones.php" class="btn btn-primary">
+                                <i class="bi bi-arrow-clockwise"></i> Actualizar
+                            </a>
+                        </div>
+                    </div>
+                </form>
+            </div>
         </div>
 
         <?php if (isset($mensaje)): ?>
@@ -184,16 +225,22 @@ $total_hoy = $stmt->fetchColumn();
         </div>
 
         <div class="card shadow-sm">
-            <div class="card-header bg-warning text-dark">
+            <div class="card-header bg-primary text-white">
                 <h5 class="mb-0">
-                    <i class="bi bi-clock"></i> Reservas Pendientes de Aprobación
-                    <?php if ($total_pendientes > 0): ?>
-                        <span class="badge bg-danger"><?= $total_pendientes ?></span>
-                    <?php endif; ?>
+                    <i class="bi bi-list-check"></i> Reservas 
+                    <?php 
+                    if ($estado_filtro !== 'todos') {
+                        echo "- " . ucfirst($estado_filtro) . "s";
+                    }
+                    if (!empty($fecha_filtro)) {
+                        echo " - " . date('d/m/Y', strtotime($fecha_filtro));
+                    }
+                    ?>
+                    <span class="badge bg-light text-dark ms-2"><?= count($reservas) ?> reservas</span>
                 </h5>
             </div>
             <div class="card-body">
-                <?php if ($total_pendientes > 0): ?>
+                <?php if (!empty($reservas)): ?>
                     <!-- Checkbox para selección múltiple -->
                     <div class="mb-3">
                         <div class="form-check">
@@ -215,11 +262,12 @@ $total_hoy = $stmt->fetchColumn();
                                     <th>Horario</th>
                                     <th>Usuario</th>
                                     <th>Motivo</th>
+                                    <th>Estado</th>
                                     <th>Acciones</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                <?php foreach ($reservas_pendientes as $reserva): ?>
+                                <?php foreach ($reservas as $reserva): ?>
                                     <tr>
                                         <td>
                                             <input type="checkbox" name="reservas_seleccionadas[]" value="<?= $reserva['id'] ?>" class="reserva-checkbox">
@@ -243,15 +291,32 @@ $total_hoy = $stmt->fetchColumn();
                                         </td>
                                         <td><?= htmlspecialchars($reserva['motivo']) ?></td>
                                         <td>
+                                            <?php
+                                            $estado_class = match($reserva['estado']) {
+                                                'aprobada' => 'success',
+                                                'pendiente' => 'warning',
+                                                'rechazada' => 'danger',
+                                                'cancelada' => 'secondary',
+                                                default => 'light'
+                                            };
+                                            ?>
+                                            <span class="badge bg-<?= $estado_class ?>">
+                                                <?= htmlspecialchars(ucfirst($reserva['estado'])) ?>
+                                            </span>
+                                        </td>
+                                        <td>
                                             <div class="btn-group" role="group">
-                                                <button class="btn btn-sm btn-outline-success" 
-                                                        onclick="aprobarReserva(<?= $reserva['id'] ?>, '<?= htmlspecialchars($reserva['motivo']) ?>')">
-                                                    <i class="bi bi-check-circle"></i> Aprobar
-                                                </button>
-                                                <button class="btn btn-sm btn-outline-danger" 
-                                                        onclick="rechazarReserva(<?= $reserva['id'] ?>, '<?= htmlspecialchars($reserva['motivo']) ?>')">
-                                                    <i class="bi bi-x-circle"></i> Rechazar
-                                                </button>
+                                                <?php if ($reserva['estado'] === 'pendiente'): ?>
+                                                    <input type="checkbox" name="reservas_seleccionadas[]" value="<?= $reserva['id'] ?>" class="reserva-checkbox">
+                                                    <button class="btn btn-sm btn-outline-success" 
+                                                            onclick="aprobarReserva(<?= $reserva['id'] ?>, '<?= htmlspecialchars($reserva['motivo']) ?>')">
+                                                        <i class="bi bi-check-circle"></i> Aprobar
+                                                    </button>
+                                                    <button class="btn btn-sm btn-outline-danger" 
+                                                            onclick="rechazarReserva(<?= $reserva['id'] ?>, '<?= htmlspecialchars($reserva['motivo']) ?>')">
+                                                        <i class="bi bi-x-circle"></i> Rechazar
+                                                    </button>
+                                                <?php endif; ?>
                                                 <button class="btn btn-sm btn-outline-info" 
                                                         onclick="verDetalles(<?= htmlspecialchars(json_encode($reserva)) ?>)">
                                                     <i class="bi bi-eye"></i>
@@ -265,9 +330,9 @@ $total_hoy = $stmt->fetchColumn();
                     </form>
                 <?php else: ?>
                     <div class="text-center py-5">
-                        <i class="bi bi-check-circle text-success" style="font-size: 3rem;"></i>
-                        <h5 class="mt-3">No hay reservas pendientes</h5>
-                        <p class="text-muted">Todas las reservas han sido procesadas</p>
+                        <i class="bi bi-search text-muted" style="font-size: 3rem;"></i>
+                        <h5 class="mt-3">No hay reservas que coincidan con los filtros</h5>
+                        <p class="text-muted">Intenta con otros criterios de búsqueda</p>
                     </div>
                 <?php endif; ?>
             </div>
@@ -383,7 +448,18 @@ $total_hoy = $stmt->fetchColumn();
             }
         }
 
+        function limpiarFiltros() {
+            window.location.href = 'aprobaciones.php';
+        }
+
         function verDetalles(reserva) {
+            const estadoColors = {
+                'aprobada': 'success',
+                'pendiente': 'warning',
+                'rechazada': 'danger',
+                'cancelada': 'secondary'
+            };
+            
             const contenido = `
                 <div class="row">
                     <div class="col-md-6"><strong>ID Reserva:</strong></div>
@@ -418,7 +494,7 @@ $total_hoy = $stmt->fetchColumn();
                 <div class="row mt-2">
                     <div class="col-md-6"><strong>Estado:</strong></div>
                     <div class="col-md-6">
-                        <span class="badge bg-warning">Pendiente</span>
+                        <span class="badge bg-${estadoColors[reserva.estado] || 'secondary'}">${reserva.estado.charAt(0).toUpperCase() + reserva.estado.slice(1)}</span>
                     </div>
                 </div>
                 <div class="row mt-2">

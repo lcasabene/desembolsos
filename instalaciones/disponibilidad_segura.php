@@ -300,7 +300,7 @@ function getEstadoHorario($hora, $reservas) {
         function gestionarReserva(hora, salonId, ocupado) {
             if (ocupado) return;
             const fecha = document.getElementById('fecha').value;
-            window.location.href = `nueva_reserva_v2.php?salon_id=${salonId}&fecha=${fecha}&hora_inicio=${hora}`;
+            window.location.href = `nueva_reserva.php?salon_id=${salonId}&fecha=${fecha}&hora_inicio=${hora}`;
         }
 
         function cambiarDia(direccion) {

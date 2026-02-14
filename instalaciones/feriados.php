@@ -69,7 +69,7 @@ $feriados = $stmt->fetchAll(PDO::FETCH_ASSOC);
     <!-- Navbar -->
     <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
         <div class="container">
-            <a class="navbar-brand" href="../menu_instalaciones.php">
+            <a class="navbar-brand" href="../menu_instalaciones_moderno.php">
                 <i class="bi bi-arrow-left"></i> Volver
             </a>
             <div class="navbar-nav ms-auto">

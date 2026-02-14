@@ -67,10 +67,12 @@ try {
 
             $stmt = $pdo->prepare("
                 SELECT a.*, c.nombre as celula_nombre, c.tipo_celula,
-                    p.nombre as lider_nombre, p.apellido as lider_apellido
+                    p.nombre as lider_nombre, p.apellido as lider_apellido,
+                    u.nombre as revisor_nombre
                 FROM redes_asistencia a
                 JOIN redes_celulas c ON a.celula_id = c.id
                 JOIN redes_personas p ON a.lider_id = p.id
+                LEFT JOIN usuarios u ON a.revisado_por = u.id
                 WHERE a.id = ?
             ");
             $stmt->execute([$id]);
@@ -106,14 +108,30 @@ try {
 
             $rol_sistema = $_SESSION['user_role'] ?? '';
             $rol_iglesia = redes_obtener_rol_iglesia($pdo, $_SESSION['user_id']);
-            if ($rol_sistema !== 'Admin' && !in_array($rol_iglesia, ['Pastor Principal', 'Pastor Ayudante'])) {
+            if ($rol_sistema !== 'Admin' && !in_array($rol_iglesia, ['Pastor Principal', 'Pastor Ayudante', 'Lider de Red'])) {
                 throw new Exception('No tenés permisos para revisar informes');
             }
 
             $id = (int)($_POST['id'] ?? 0);
             if (!$id) { throw new Exception('ID inválido'); }
-            $pdo->prepare("UPDATE redes_asistencia SET estado = 'Revisado' WHERE id = ?")->execute([$id]);
-            echo json_encode(['success' => true, 'message' => 'Informe marcado como revisado']);
+            $pdo->prepare("UPDATE redes_asistencia SET estado = 'Revisado', revisado_por = ?, fecha_revision = NOW() WHERE id = ? AND estado = 'Enviado'")->execute([$_SESSION['user_id'], $id]);
+            echo json_encode(['success' => true, 'message' => 'Informe aprobado y marcado como revisado']);
+            break;
+
+        case 'rechazar':
+            if ($_SERVER['REQUEST_METHOD'] !== 'POST') { throw new Exception('Método no permitido'); }
+            if (!verificar_token_csrf($_POST['csrf_token'] ?? '')) { throw new Exception('Token CSRF inválido'); }
+
+            $rol_sistema = $_SESSION['user_role'] ?? '';
+            $rol_iglesia = redes_obtener_rol_iglesia($pdo, $_SESSION['user_id']);
+            if ($rol_sistema !== 'Admin' && !in_array($rol_iglesia, ['Pastor Principal', 'Pastor Ayudante', 'Lider de Red'])) {
+                throw new Exception('No tenés permisos para rechazar informes');
+            }
+
+            $id = (int)($_POST['id'] ?? 0);
+            if (!$id) { throw new Exception('ID inválido'); }
+            $pdo->prepare("UPDATE redes_asistencia SET estado = 'Borrador' WHERE id = ? AND estado = 'Enviado'")->execute([$id]);
+            echo json_encode(['success' => true, 'message' => 'Informe rechazado y devuelto a borrador']);
             break;
 
         default:

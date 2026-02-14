@@ -69,8 +69,14 @@ if (!empty($celulas_vis)) {
     $estadisticas = $stmt->fetch(PDO::FETCH_ASSOC);
 }
 
-// Preparar datos JSON para el gráfico
-$celulas_json = json_encode($celulas, JSON_UNESCAPED_UNICODE);
+// Pastores para el nodo Iglesia
+$pastores = $pdo->query("
+    SELECT p.nombre, p.apellido, p.rol_iglesia,
+        (SELECT GROUP_CONCAT(c.nombre SEPARATOR ', ') FROM redes_celulas c WHERE c.lider_id = p.id AND c.estado = 'Activa') as redes_a_cargo
+    FROM redes_personas p 
+    WHERE p.rol_iglesia IN ('Pastor Principal','Pastor Ayudante') AND p.estado = 'Miembro'
+    ORDER BY FIELD(p.rol_iglesia, 'Pastor Principal', 'Pastor Ayudante'), p.apellido
+")->fetchAll(PDO::FETCH_ASSOC);
 
 // Colores por tipo de célula
 function tipoColor($tipo) {
@@ -151,6 +157,23 @@ function tipoColor($tipo) {
         .tree-node .node-stats-mini strong { color: var(--primary); font-size: .9rem; }
         .tree-node .node-actions { margin-top: 8px; display: flex; gap: 4px; justify-content: center; }
         .tree-node .node-actions .btn { padding: 2px 8px; font-size: .72rem; }
+
+        /* ===== TOOLTIP ===== */
+        .node-tooltip {
+            display: none; position: absolute; bottom: calc(100% + 12px); left: 50%; transform: translateX(-50%);
+            background: #2c3e50; color: #fff; border-radius: 10px; padding: 12px 16px; min-width: 240px; max-width: 300px;
+            box-shadow: 0 8px 25px rgba(0,0,0,.25); z-index: 200; text-align: left; font-size: .8rem; line-height: 1.5;
+            pointer-events: none;
+        }
+        .node-tooltip::after {
+            content: ''; position: absolute; top: 100%; left: 50%; transform: translateX(-50%);
+            border: 8px solid transparent; border-top-color: #2c3e50;
+        }
+        .tree-node:hover .node-tooltip { display: block; }
+        .node-tooltip .tt-title { font-weight: 700; font-size: .85rem; margin-bottom: 6px; color: #fff; border-bottom: 1px solid rgba(255,255,255,.15); padding-bottom: 5px; }
+        .node-tooltip .tt-row { margin-bottom: 3px; }
+        .node-tooltip .tt-row i { width: 16px; margin-right: 5px; opacity: .7; }
+        .node-tooltip .tt-label { opacity: .6; font-size: .7rem; }
 
         /* ===== LISTA (vista tarjetas) ===== */
         .red-section { margin-bottom: 2rem; }
@@ -243,8 +266,27 @@ function tipoColor($tipo) {
                             <ul>
                                 <!-- Nodo raíz: Iglesia -->
                                 <li>
-                                    <div class="tree-node is-red" style="border-color: var(--primary-dark); background: linear-gradient(135deg, rgba(102,126,234,.12), rgba(118,75,162,.12));">
+                                    <div class="tree-node is-red" style="border-color: var(--primary-dark); background: linear-gradient(135deg, rgba(102,126,234,.12), rgba(118,75,162,.12)); cursor:pointer;" onclick="location.href='organigrama_nodo.php?tipo=iglesia'">
+                                        <div class="node-tooltip">
+                                            <div class="tt-title"><i class="bi bi-building me-1"></i>Iglesia - Encargados</div>
+                                            <?php if (!empty($pastores)): foreach ($pastores as $pas): ?>
+                                            <div class="tt-row"><i class="bi bi-person-badge"></i><strong><?= htmlspecialchars($pas['nombre'].' '.$pas['apellido']) ?></strong></div>
+                                            <div class="tt-row"><i class="bi bi-award"></i><?= $pas['rol_iglesia'] ?></div>
+                                            <?php if ($pas['redes_a_cargo']): ?><div class="tt-row"><i class="bi bi-share"></i>Redes: <?= htmlspecialchars($pas['redes_a_cargo']) ?></div><?php endif; ?>
+                                            <div style="border-bottom:1px solid rgba(255,255,255,.1);margin:4px 0"></div>
+                                            <?php endforeach; else: ?>
+                                            <div class="tt-row" style="opacity:.6">Sin pastores asignados</div>
+                                            <?php endif; ?>
+                                            <div class="tt-row tt-label">Clic para ver detalle completo</div>
+                                        </div>
                                         <div class="node-name" style="font-size:1.05rem;"><i class="bi bi-building me-1"></i>Iglesia</div>
+                                        <?php if (!empty($pastores)): ?>
+                                        <div style="margin:6px 0;font-size:.75rem;color:#6c757d;">
+                                            <?php foreach ($pastores as $pas): ?>
+                                            <div><i class="bi bi-person-badge me-1" style="color:#764ba2"></i><strong><?= htmlspecialchars($pas['nombre'].' '.$pas['apellido']) ?></strong> <span style="font-size:.65rem;opacity:.8">(<?= $pas['rol_iglesia'] ?>)</span><?php if ($pas['redes_a_cargo']): ?> <span style="font-size:.65rem">→ <?= htmlspecialchars($pas['redes_a_cargo']) ?></span><?php endif; ?></div>
+                                            <?php endforeach; ?>
+                                        </div>
+                                        <?php endif; ?>
                                         <div class="node-stats-mini">
                                             <span><strong><?= $estadisticas['redes_count'] ?></strong> redes</span>
                                             <span><strong><?= $estadisticas['total_celulas'] ?></strong> células</span>
@@ -259,7 +301,18 @@ function tipoColor($tipo) {
                                             $color = tipoColor($red['tipo_celula']);
                                             $lider = $red['lider_nombre'] ? htmlspecialchars($red['lider_nombre'].' '.$red['lider_apellido']) : 'Sin líder';
                                             ?>
-                                            <div class="tree-node is-red" style="border-color: <?= $color ?>;" onclick="location.href='celula_detalle.php?id=<?= $red['id'] ?>'">
+                                            <div class="tree-node is-red" style="border-color: <?= $color ?>;" onclick="location.href='organigrama_nodo.php?tipo=celula&id=<?= $red['id'] ?>'">
+                                                <div class="node-tooltip">
+                                                    <div class="tt-title" style="color:<?= $color ?>"><?= htmlspecialchars($red['nombre']) ?></div>
+                                                    <div class="tt-row"><i class="bi bi-person-badge"></i><strong><?= $lider ?></strong></div>
+                                                    <?php if ($red['lider_celular']): ?><div class="tt-row"><i class="bi bi-telephone"></i><?= htmlspecialchars($red['lider_celular']) ?></div><?php endif; ?>
+                                                    <?php if ($red['lider_email']): ?><div class="tt-row"><i class="bi bi-envelope"></i><?= htmlspecialchars($red['lider_email']) ?></div><?php endif; ?>
+                                                    <?php if ($red['dia_reunion']): ?><div class="tt-row"><i class="bi bi-calendar3"></i><?= $red['dia_reunion'] ?> <?= $red['hora_reunion'] ? substr($red['hora_reunion'],0,5) : '' ?> (<?= $red['frecuencia'] ?? 'Semanal' ?>)</div><?php endif; ?>
+                                                    <?php if ($red['direccion']): ?><div class="tt-row"><i class="bi bi-geo-alt"></i><?= htmlspecialchars($red['direccion']) ?></div><?php endif; ?>
+                                                    <div class="tt-row"><i class="bi bi-people"></i><?= $red['miembros_count'] ?> miembros · <?= $red['subcelulas_count'] ?> subcélulas</div>
+                                                    <?php if ($red['ultima_reunion']): ?><div class="tt-row"><i class="bi bi-clock-history"></i>Última reunión: <?= redes_formato_fecha($red['ultima_reunion']) ?></div><?php endif; ?>
+                                                    <div class="tt-row tt-label">Clic para ver dependencias</div>
+                                                </div>
                                                 <div class="node-type-badge" style="background:<?= $color ?>"><?= $red['tipo_celula'] ?></div>
                                                 <div class="node-name"><?= htmlspecialchars($red['nombre']) ?></div>
                                                 <div class="node-leader"><i class="bi bi-person-circle me-1"></i><?= $lider ?></div>
@@ -281,7 +334,18 @@ function tipoColor($tipo) {
                                                     $ccolor = tipoColor($child['tipo_celula']);
                                                     $clider = $child['lider_nombre'] ? htmlspecialchars($child['lider_nombre'].' '.$child['lider_apellido']) : 'Sin líder';
                                                     ?>
-                                                    <div class="tree-node" style="border-color: <?= $ccolor ?>;" onclick="location.href='celula_detalle.php?id=<?= $child['id'] ?>'">
+                                                    <div class="tree-node" style="border-color: <?= $ccolor ?>;" onclick="location.href='organigrama_nodo.php?tipo=celula&id=<?= $child['id'] ?>'">
+                                                        <div class="node-tooltip">
+                                                            <div class="tt-title" style="color:<?= $ccolor ?>"><?= htmlspecialchars($child['nombre']) ?></div>
+                                                            <div class="tt-row"><i class="bi bi-person-badge"></i><strong><?= $clider ?></strong></div>
+                                                            <?php if ($child['lider_celular']): ?><div class="tt-row"><i class="bi bi-telephone"></i><?= htmlspecialchars($child['lider_celular']) ?></div><?php endif; ?>
+                                                            <?php if ($child['lider_email']): ?><div class="tt-row"><i class="bi bi-envelope"></i><?= htmlspecialchars($child['lider_email']) ?></div><?php endif; ?>
+                                                            <?php if ($child['dia_reunion']): ?><div class="tt-row"><i class="bi bi-calendar3"></i><?= $child['dia_reunion'] ?> <?= $child['hora_reunion'] ? substr($child['hora_reunion'],0,5) : '' ?></div><?php endif; ?>
+                                                            <?php if ($child['direccion']): ?><div class="tt-row"><i class="bi bi-geo-alt"></i><?= htmlspecialchars($child['direccion']) ?></div><?php endif; ?>
+                                                            <div class="tt-row"><i class="bi bi-people"></i><?= $child['miembros_count'] ?> miembros</div>
+                                                            <?php if ($child['ultima_reunion']): ?><div class="tt-row"><i class="bi bi-clock-history"></i>Última: <?= redes_formato_fecha($child['ultima_reunion']) ?></div><?php endif; ?>
+                                                            <div class="tt-row tt-label">Clic para ver dependencias</div>
+                                                        </div>
                                                         <div class="node-type-badge" style="background:<?= $ccolor ?>"><?= $child['tipo_celula'] ?></div>
                                                         <div class="node-name"><?= htmlspecialchars($child['nombre']) ?></div>
                                                         <div class="node-leader"><i class="bi bi-person-circle me-1"></i><?= $clider ?></div>
@@ -302,8 +366,18 @@ function tipoColor($tipo) {
                                                         <?php foreach ($child['children'] as $sub): ?>
                                                         <li>
                                                             <?php $sldr = $sub['lider_nombre'] ? htmlspecialchars($sub['lider_nombre'].' '.$sub['lider_apellido']) : 'Sin líder'; ?>
-                                                            <div class="tree-node" style="border-color: <?= tipoColor($sub['tipo_celula']) ?>;" onclick="location.href='celula_detalle.php?id=<?= $sub['id'] ?>'">
-                                                                <div class="node-type-badge" style="background:<?= tipoColor($sub['tipo_celula']) ?>"><?= $sub['tipo_celula'] ?></div>
+                                                            <?php $scolor = tipoColor($sub['tipo_celula']); ?>
+                                                            <div class="tree-node" style="border-color: <?= $scolor ?>;" onclick="location.href='organigrama_nodo.php?tipo=celula&id=<?= $sub['id'] ?>'">
+                                                                <div class="node-tooltip">
+                                                                    <div class="tt-title" style="color:<?= $scolor ?>"><?= htmlspecialchars($sub['nombre']) ?></div>
+                                                                    <div class="tt-row"><i class="bi bi-person-badge"></i><strong><?= $sldr ?></strong></div>
+                                                                    <?php if ($sub['lider_celular']): ?><div class="tt-row"><i class="bi bi-telephone"></i><?= htmlspecialchars($sub['lider_celular']) ?></div><?php endif; ?>
+                                                                    <?php if ($sub['dia_reunion']): ?><div class="tt-row"><i class="bi bi-calendar3"></i><?= $sub['dia_reunion'] ?> <?= $sub['hora_reunion'] ? substr($sub['hora_reunion'],0,5) : '' ?></div><?php endif; ?>
+                                                                    <?php if ($sub['direccion']): ?><div class="tt-row"><i class="bi bi-geo-alt"></i><?= htmlspecialchars($sub['direccion']) ?></div><?php endif; ?>
+                                                                    <div class="tt-row"><i class="bi bi-people"></i><?= $sub['miembros_count'] ?> miembros</div>
+                                                                    <div class="tt-row tt-label">Clic para ver dependencias</div>
+                                                                </div>
+                                                                <div class="node-type-badge" style="background:<?= $scolor ?>"><?= $sub['tipo_celula'] ?></div>
                                                                 <div class="node-name"><?= htmlspecialchars($sub['nombre']) ?></div>
                                                                 <div class="node-leader"><i class="bi bi-person-circle me-1"></i><?= $sldr ?></div>
                                                                 <div class="node-stats-mini"><span><strong><?= $sub['miembros_count'] ?></strong> miembros</span></div>

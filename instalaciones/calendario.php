@@ -205,7 +205,7 @@ $nombres_meses = [
     <!-- Navbar -->
     <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
         <div class="container">
-            <a class="navbar-brand" href="../menu_instalaciones.php">
+            <a class="navbar-brand" href="../menu_instalaciones_moderno.php">
                 <i class="bi bi-arrow-left"></i> Volver
             </a>
             <div class="navbar-nav ms-auto">
@@ -340,7 +340,8 @@ $nombres_meses = [
                             if ($cont >= $max_mostrar) break;
                             
                             $estado_class = $reserva['estado'];
-                            $titulo = "{$reserva['salon_numero']} - {$reserva['hora_inicio']} a {$reserva['hora_fin']}\n";
+                            $titulo = "Salón: {$reserva['salon_numero']} - {$reserva['salon_nombre']}\n";
+                            $titulo .= "Horario: {$reserva['hora_inicio']} a {$reserva['hora_fin']}\n";
                             $titulo .= "Usuario: {$reserva['usuario_nombre']}\n";
                             $titulo .= "Motivo: {$reserva['motivo']}\n";
                             $titulo .= "Estado: {$reserva['estado']}";

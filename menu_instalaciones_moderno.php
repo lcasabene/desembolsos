@@ -514,7 +514,7 @@ $avatar = $_SESSION['user_email'] ?? '';
         </a>
 
         <!-- Nueva Reserva -->
-        <a href="instalaciones/nueva_reserva_v2.php" class="feature-card">
+        <a href="instalaciones/nueva_reserva.php" class="feature-card">
             <div class="feature-content">
                 <div class="feature-icon reserva">
                     <i class="bi bi-calendar-plus"></i>
@@ -650,7 +650,7 @@ $avatar = $_SESSION['user_email'] ?? '';
                     </div>
                     <h3 class="feature-title">Configuración</h3>
                     <p class="feature-description">
-                        Ajusta parámetros del sistema, límites de reserva y configuraciones generales.
+                        Ajusta parámetros del sistema, límites de reserva, horarios, feriados y gestión de porteros.
                     </p>
                     <div class="feature-action">
                         Configurar Sistema <i class="bi bi-arrow-right"></i>

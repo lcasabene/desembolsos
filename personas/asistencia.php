@@ -7,6 +7,7 @@ $rol_sistema = $_SESSION['user_role'] ?? '';
 $rol_iglesia = redes_obtener_rol_iglesia($pdo, $usuario_id);
 $persona = redes_obtener_persona_usuario($pdo, $usuario_id);
 $es_lider = in_array($rol_iglesia, ['Pastor Principal','Pastor Ayudante','Lider de Red','Lider de Célula']) || $rol_sistema === 'Admin';
+$puede_revisar = in_array($rol_iglesia, ['Pastor Principal','Pastor Ayudante','Lider de Red']) || $rol_sistema === 'Admin';
 
 if (!$es_lider) {
     header('Location: index.php?error=sin_permiso');
@@ -142,6 +143,13 @@ $csrf_token = generar_token_csrf();
                                 <?php if ($inf['estado'] === 'Borrador'): ?>
                                 <button class="btn btn-sm btn-outline-success" onclick="enviarInforme(<?= $inf['id'] ?>)" title="Enviar"><i class="bi bi-send"></i></button>
                                 <?php endif; ?>
+                                <?php if ($inf['estado'] === 'Enviado' && $puede_revisar): ?>
+                                <button class="btn btn-sm btn-outline-success" onclick="revisarInforme(<?= $inf['id'] ?>)" title="Aprobar / Marcar como revisado"><i class="bi bi-check-circle"></i></button>
+                                <button class="btn btn-sm btn-outline-danger" onclick="rechazarInforme(<?= $inf['id'] ?>)" title="Rechazar (devolver a borrador)"><i class="bi bi-x-circle"></i></button>
+                                <?php endif; ?>
+                                <?php if ($inf['estado'] === 'Revisado'): ?>
+                                <span class="text-success" title="Revisado"><i class="bi bi-patch-check-fill"></i></span>
+                                <?php endif; ?>
                             </td>
                         </tr>
                     <?php endforeach; endif; ?>
@@ -225,6 +233,7 @@ $csrf_token = generar_token_csrf();
             <div class="modal-content">
                 <div class="modal-header"><h5 class="modal-title">Detalle del Informe</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
                 <div class="modal-body" id="detalleInforme">Cargando...</div>
+                <div class="modal-footer" id="footerVerInforme"></div>
             </div>
         </div>
     </div>
@@ -280,15 +289,24 @@ $csrf_token = generar_token_csrf();
         }, 'json').fail(() => alert('Error de conexión'));
     }
 
+    const puedeRevisar = <?= json_encode($puede_revisar) ?>;
+
     function verInforme(id) {
         $.getJSON('api_asistencia.php?action=obtener&id=' + id, function(r) {
             if (!r.success) { alert(r.message); return; }
             const a = r.data;
+
+            // Badge de estado con color
+            let estadoBadge = '';
+            if (a.estado === 'Borrador') estadoBadge = '<span class="estado-badge estado-borrador">Borrador</span>';
+            else if (a.estado === 'Enviado') estadoBadge = '<span class="estado-badge estado-enviado">Enviado - Pendiente de revisión</span>';
+            else estadoBadge = '<span class="estado-badge estado-revisado"><i class="bi bi-patch-check-fill me-1"></i>Revisado</span>';
+
             let html = `
                 <div class="row g-3">
                     <div class="col-md-6"><strong>Célula:</strong> ${a.celula_nombre}</div>
                     <div class="col-md-3"><strong>Fecha:</strong> ${a.fecha_reunion}</div>
-                    <div class="col-md-3"><strong>Estado:</strong> ${a.estado}</div>
+                    <div class="col-md-3"><strong>Estado:</strong> ${estadoBadge}</div>
                     <div class="col-md-4"><strong>Miembros:</strong> ${a.total_miembros_asistentes}</div>
                     <div class="col-md-4"><strong>Invitados:</strong> ${a.total_invitados}</div>
                     <div class="col-md-4"><strong>Total:</strong> ${a.total_asistencia}</div>
@@ -300,7 +318,9 @@ $csrf_token = generar_token_csrf();
             if (a.observaciones) html += `<strong>Observaciones:</strong><p>${a.observaciones}</p>`;
 
             if (r.detalle && r.detalle.length) {
-                html += '<hr><strong>Asistencia detallada:</strong><ul class="list-group list-group-flush mt-2">';
+                const presentes = r.detalle.filter(d => d.presente == 1).length;
+                const ausentes = r.detalle.length - presentes;
+                html += `<hr><strong>Asistencia detallada:</strong> <small class="text-muted">(${presentes} presentes, ${ausentes} ausentes)</small><ul class="list-group list-group-flush mt-2">`;
                 r.detalle.forEach(d => {
                     const icon = d.presente == 1 ? '<i class="bi bi-check-circle-fill text-success"></i>' : '<i class="bi bi-x-circle-fill text-danger"></i>';
                     html += `<li class="list-group-item py-1">${icon} ${d.nombre} ${d.apellido}</li>`;
@@ -308,13 +328,45 @@ $csrf_token = generar_token_csrf();
                 html += '</ul>';
             }
             $('#detalleInforme').html(html);
+
+            // Footer con botones de acción según estado
+            let footer = '';
+            if (a.estado === 'Borrador') {
+                footer = `<button class="btn btn-outline-success" onclick="enviarInforme(${a.id})"><i class="bi bi-send me-1"></i>Enviar Informe</button>`;
+            } else if (a.estado === 'Enviado' && puedeRevisar) {
+                footer = `<button class="btn btn-outline-danger" onclick="rechazarInforme(${a.id})"><i class="bi bi-x-circle me-1"></i>Rechazar</button>`;
+                footer += `<button class="btn btn-success" onclick="revisarInforme(${a.id})"><i class="bi bi-check-circle me-1"></i>Aprobar y Marcar como Revisado</button>`;
+            } else if (a.estado === 'Revisado') {
+                let revisorInfo = 'Este informe ya fue revisado y aprobado.';
+                if (a.revisor_nombre) revisorInfo += ` Por: <strong>${a.revisor_nombre}</strong>`;
+                if (a.fecha_revision) revisorInfo += ` el ${a.fecha_revision}`;
+                footer = `<span class="text-success"><i class="bi bi-patch-check-fill me-1"></i>${revisorInfo}</span>`;
+            }
+            $('#footerVerInforme').html(footer);
+
             new bootstrap.Modal('#modalVerInforme').show();
         });
     }
 
     function enviarInforme(id) {
-        if (!confirm('¿Enviar este informe?')) return;
+        if (!confirm('¿Enviar este informe? Una vez enviado quedará pendiente de revisión.')) return;
         $.post('api_asistencia.php?action=enviar', { id: id, csrf_token: csrfToken }, function(r) {
+            if (r.success) location.reload();
+            else alert('Error: ' + r.message);
+        }, 'json');
+    }
+
+    function revisarInforme(id) {
+        if (!confirm('¿Aprobar y marcar este informe como revisado?')) return;
+        $.post('api_asistencia.php?action=revisar', { id: id, csrf_token: csrfToken }, function(r) {
+            if (r.success) location.reload();
+            else alert('Error: ' + r.message);
+        }, 'json');
+    }
+
+    function rechazarInforme(id) {
+        if (!confirm('¿Rechazar este informe? Volverá al estado Borrador para que el líder lo corrija.')) return;
+        $.post('api_asistencia.php?action=rechazar', { id: id, csrf_token: csrfToken }, function(r) {
             if (r.success) location.reload();
             else alert('Error: ' + r.message);
         }, 'json');

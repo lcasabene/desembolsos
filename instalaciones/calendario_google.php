@@ -590,7 +590,7 @@ $nombres_mes = [
             <div class="card-body">
                 <div class="row">
                     <div class="col-md-3">
-                        <a href="nueva_reserva_v2.php" class="btn btn-success w-100">
+                        <a href="nueva_reserva.php" class="btn btn-success w-100">
                             <i class="bi bi-plus-circle"></i> Crear Nueva Reserva
                         </a>
                     </div>

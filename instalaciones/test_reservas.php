@@ -139,5 +139,5 @@ if ($tiene_telefono) {
 echo "<hr>";
 echo "<p><a href='aprobaciones.php'>🔄 Ir a Aprobaciones</a></p>";
 echo "<p><a href='mis_reservas.php'>📋 Ir a Mis Reservas</a></p>";
-echo "<p><a href='nueva_reserva_v2.php'>➕ Crear Nueva Reserva</a></p>";
+echo "<p><a href='nueva_reserva.php'>➕ Crear Nueva Reserva</a></p>";
 ?>

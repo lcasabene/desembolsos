@@ -175,6 +175,8 @@ CREATE TABLE IF NOT EXISTS redes_asistencia (
     observaciones TEXT,
     ofrenda DECIMAL(10,2) DEFAULT 0,
     estado ENUM('Borrador','Enviado','Revisado') DEFAULT 'Borrador',
+    revisado_por INT NULL,                -- FK a usuarios del sistema (quien aprobó)
+    fecha_revision DATETIME NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (celula_id) REFERENCES redes_celulas(id) ON DELETE CASCADE,

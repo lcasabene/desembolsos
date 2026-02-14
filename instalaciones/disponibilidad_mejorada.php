@@ -544,7 +544,7 @@ function getEstadoIcon($estado) {
             <div class="card-body">
                 <div class="row">
                     <div class="col-md-6">
-                        <a href="nueva_reserva_v2.php" class="btn btn-success w-100">
+                        <a href="nueva_reserva.php" class="btn btn-success w-100">
                             <i class="bi bi-plus-circle"></i> Crear Nueva Reserva
                         </a>
                     </div>
@@ -587,7 +587,7 @@ function getEstadoIcon($estado) {
                 return;
             }
             
-            const url = `nueva_reserva_v2.php?salon_id=${salonSeleccionado}&fecha=${fecha}&hora_inicio=${horaInicio}&hora_fin=${horaFin}`;
+            const url = `nueva_reserva.php?salon_id=${salonSeleccionado}&fecha=${fecha}&hora_inicio=${horaInicio}&hora_fin=${horaFin}`;
             window.location.href = url;
         }
 

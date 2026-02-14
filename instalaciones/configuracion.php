@@ -125,7 +125,7 @@ $usuarios = $stmt_usuarios->fetchAll(PDO::FETCH_ASSOC);
     <!-- Navbar -->
     <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
         <div class="container">
-            <a class="navbar-brand" href="../menu_instalaciones.php">
+            <a class="navbar-brand" href="../menu_instalaciones_moderno.php">
                 <i class="bi bi-arrow-left"></i> Volver
             </a>
             <div class="navbar-nav ms-auto">
@@ -284,7 +284,7 @@ $usuarios = $stmt_usuarios->fetchAll(PDO::FETCH_ASSOC);
                             </div>
 
                             <div class="d-grid gap-2 d-md-flex justify-content-md-end">
-                                <a href="../menu_instalaciones.php" class="btn btn-secondary">
+                                <a href="../menu_instalaciones_moderno.php" class="btn btn-secondary">
                                     <i class="bi bi-x-circle"></i> Cancelar
                                 </a>
                                 <button type="submit" class="btn btn-primary">
@@ -341,6 +341,23 @@ $usuarios = $stmt_usuarios->fetchAll(PDO::FETCH_ASSOC);
                             <li>Los usuarios verán las nuevas reglas al intentar reservar</li>
                             <li>Se recomienda notificar los cambios importantes</li>
                         </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Acceso rápido a Horarios y Feriados -->
+        <div class="row mt-4">
+            <div class="col-12">
+                <div class="card shadow-sm">
+                    <div class="card-header bg-primary text-white">
+                        <h5 class="mb-0"><i class="bi bi-clock-history"></i> Horarios y Feriados</h5>
+                    </div>
+                    <div class="card-body">
+                        <p>Configura los rangos horarios disponibles para reservas y los días feriados.</p>
+                        <a href="configuracion_horarios.php" class="btn btn-primary">
+                            <i class="bi bi-clock"></i> Gestionar Horarios y Feriados
+                        </a>
                     </div>
                 </div>
             </div>

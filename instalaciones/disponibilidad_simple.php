@@ -12,6 +12,35 @@ $salon_id_filtro = $_GET['salon_id'] ?? 0;
 $stmt = $pdo->query("SELECT * FROM salones WHERE estado = 'activo' ORDER BY numero");
 $salones = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
+// Obtener horarios permitidos
+try {
+    $stmt_h = $pdo->query("SELECT * FROM configuracion_horarios WHERE estado = 'activo' ORDER BY hora_inicio");
+    $horarios_permitidos = $stmt_h->fetchAll(PDO::FETCH_ASSOC);
+} catch (PDOException $e) {
+    try {
+        $stmt_h = $pdo->query("SELECT * FROM rangos_horarios WHERE estado = 'activo' ORDER BY hora_inicio");
+        $horarios_permitidos = $stmt_h->fetchAll(PDO::FETCH_ASSOC);
+    } catch (PDOException $e2) {
+        $horarios_permitidos = [];
+    }
+}
+
+// Verificar si la fecha seleccionada es feriado
+$es_feriado = false;
+$nombre_feriado = '';
+try {
+    $stmt_f = $pdo->prepare("SELECT nombre FROM feriados WHERE fecha = ? OR (recurrente = 'anual' AND MONTH(fecha) = MONTH(?) AND DAY(fecha) = DAY(?))");
+    $stmt_f->execute([$fecha_seleccionada, $fecha_seleccionada, $fecha_seleccionada]);
+    $feriado = $stmt_f->fetch(PDO::FETCH_ASSOC);
+    if ($feriado) {
+        $es_feriado = true;
+        $nombre_feriado = $feriado['nombre'];
+    }
+} catch (PDOException $e) {}
+
+// Día de la semana de la fecha seleccionada (1=Lunes, 7=Domingo)
+$dia_semana_sel = date('N', strtotime($fecha_seleccionada));
+
 // Filtrar salones para la vista
 $salones_mostrar = ($salon_id_filtro > 0) 
     ? array_filter($salones, fn($s) => $s['id'] == $salon_id_filtro) 
@@ -64,6 +93,23 @@ function getEstadoHorario($hora, $reservas) {
         }
     }
     return ['ocupado' => false];
+}
+
+function esHorarioHabilitado($hora, $dia_semana, $horarios_permitidos, $es_feriado) {
+    if ($es_feriado) return false;
+    if (empty($horarios_permitidos)) return true; // Si no hay config, todo habilitado
+    
+    $hora_ts = strtotime($hora);
+    foreach ($horarios_permitidos as $rango) {
+        $inicio_ts = strtotime($rango['hora_inicio']);
+        $fin_ts = strtotime($rango['hora_fin']);
+        $dias = json_decode($rango['dias_semana'], true) ?? [];
+        
+        if (in_array($dia_semana, $dias) && $hora_ts >= $inicio_ts && $hora_ts < $fin_ts) {
+            return true;
+        }
+    }
+    return false;
 }
 
 ?>
@@ -126,8 +172,12 @@ function getEstadoHorario($hora, $reservas) {
         .disponible { background-color: var(--bg-disponible); color: var(--color-disponible); }
         .ocupado-aprobada { background-color: var(--bg-ocupado); color: var(--color-ocupado); }
         .ocupado-pendiente { background-color: var(--bg-pendiente); color: #856404; }
+        .no-habilitado { background-color: #e9ecef; color: #adb5bd; cursor: not-allowed; }
+        .no-habilitado i { opacity: 0.3; }
+        .feriado-banner { background: #dc3545; color: white; padding: 10px; border-radius: 6px; margin-bottom: 15px; text-align: center; font-weight: bold; }
 
         .horario-cell:hover { filter: brightness(0.95); }
+        .no-habilitado:hover { filter: none; }
         
         .tooltip-box {
             position: absolute;
@@ -148,7 +198,7 @@ function getEstadoHorario($hora, $reservas) {
     <!-- Navbar -->
     <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
         <div class="container-fluid">
-            <a class="navbar-brand" href="../menu_instalaciones.php">
+            <a class="navbar-brand" href="../menu_instalaciones_moderno.php">
                 <i class="bi bi-arrow-left"></i> Volver
             </a>
             <div class="navbar-nav ms-auto">
@@ -210,33 +260,79 @@ function getEstadoHorario($hora, $reservas) {
             </div>
         </div>
 
+        <?php if ($es_feriado): ?>
+            <div class="feriado-banner">
+                <i class="bi bi-calendar-x me-2"></i>FERIADO: <?= htmlspecialchars($nombre_feriado) ?> - No se permiten reservas este día
+            </div>
+        <?php endif; ?>
+
+        <!-- Leyenda -->
+        <div class="d-flex flex-wrap gap-3 mb-3 small">
+            <span><span style="display:inline-block;width:16px;height:16px;background:var(--bg-disponible);border:1px solid #ccc;vertical-align:middle"></span> Disponible</span>
+            <span><span style="display:inline-block;width:16px;height:16px;background:var(--bg-ocupado);border:1px solid #ccc;vertical-align:middle"></span> Reservado (aprobada)</span>
+            <span><span style="display:inline-block;width:16px;height:16px;background:var(--bg-pendiente);border:1px solid #ccc;vertical-align:middle"></span> Reservado (pendiente)</span>
+            <span><span style="display:inline-block;width:16px;height:16px;background:#e9ecef;border:1px solid #ccc;vertical-align:middle"></span> No habilitado</span>
+            <?php if (!empty($horarios_permitidos)): ?>
+                <?php 
+                $dias_nombres = [1 => 'Lun', 2 => 'Mar', 3 => 'Mié', 4 => 'Jue', 5 => 'Vie', 6 => 'Sáb', 7 => 'Dom'];
+                foreach ($horarios_permitidos as $hp): 
+                    $dias = json_decode($hp['dias_semana'], true) ?? [];
+                    $dias_txt = array_map(fn($d) => $dias_nombres[$d] ?? '', $dias);
+                ?>
+                    <span class="text-muted"><i class="bi bi-clock"></i> <?= $hp['hora_inicio'] ?>-<?= $hp['hora_fin'] ?> (<?= implode(',', $dias_txt) ?>)</span>
+                <?php endforeach; ?>
+            <?php endif; ?>
+        </div>
+
         <div class="table-responsive shadow-sm bg-white rounded">
             <div class="disponibilidad-grid">
                 <div class="grid-header-hora">Hora</div>
                 <?php foreach ($salones_mostrar as $salon): ?>
-                    <div class="grid-header-salon">
+                    <div class="grid-header-salon" 
+                         title="<?= htmlspecialchars($salon['nombre']) ?> - Cap: <?= $salon['capacidad'] ?> personas<?= $salon['descripcion'] ? ' - ' . $salon['descripcion'] : '' ?>">
                         <strong><?= $salon['numero'] ?></strong><br>
-                        <small><?= $salon['nombre'] ?></small>
+                        <small><?= $salon['nombre'] ?></small><br>
+                        <small style="opacity:0.8">Cap: <?= $salon['capacidad'] ?></small>
                     </div>
                 <?php endforeach; ?>
 
                 <?php foreach ($horarios as $h): ?>
                     <div class="grid-cell-hora"><?= $h['display'] ?></div>
                     <?php foreach ($salones_mostrar as $salon): 
+                        $habilitado = esHorarioHabilitado($h['inicio'], $dia_semana_sel, $horarios_permitidos, $es_feriado);
                         $info = getEstadoHorario($h['inicio'], $reservas_por_salon[$salon['id']] ?? []);
-                        $clase = $info['ocupado'] ? 'ocupado-' . $info['estado'] : 'disponible';
-                        $icono = $info['ocupado'] ? 'bi-x-lg' : 'bi-plus-circle';
-                        $text_tooltip = $info['ocupado'] 
-                            ? "RESERVADO\nUsuario: {$info['usuario']}\nMotivo: {$info['motivo']}" 
-                            : "Disponible\nClick para reservar {$h['display']}";
+                        
+                        if (!$habilitado) {
+                            $clase = 'no-habilitado';
+                            $icono = 'bi-dash';
+                            $text_tooltip = $es_feriado 
+                                ? "FERIADO: $nombre_feriado\nNo se permiten reservas" 
+                                : "Horario no habilitado\nFuera de franja permitida";
+                            $clickable = false;
+                        } elseif ($info['ocupado']) {
+                            $clase = 'ocupado-' . $info['estado'];
+                            $icono = 'bi-x-lg';
+                            $text_tooltip = "RESERVADO\nUsuario: {$info['usuario']}\nMotivo: {$info['motivo']}\nSalón: {$salon['nombre']}";
+                            if ($salon['descripcion']) $text_tooltip .= "\n" . $salon['descripcion'];
+                            $clickable = false;
+                        } else {
+                            $clase = 'disponible';
+                            $icono = 'bi-plus-circle';
+                            $text_tooltip = "Disponible\nSalón: {$salon['nombre']}\nCapacidad: {$salon['capacidad']} personas";
+                            if ($salon['descripcion']) $text_tooltip .= "\n" . $salon['descripcion'];
+                            $text_tooltip .= "\nClick para reservar {$h['display']}";
+                            $clickable = true;
+                        }
                     ?>
                         <div class="horario-cell <?= $clase ?>" 
-                             onclick="gestionarReserva('<?= $h['inicio'] ?>', <?= $salon['id'] ?>, <?= $info['ocupado'] ? 'true' : 'false' ?>)"
+                             <?php if ($clickable): ?>onclick="gestionarReserva('<?= $h['inicio'] ?>', <?= $salon['id'] ?>, false)"<?php endif; ?>
                              onmouseover="showTip(event, '<?= htmlspecialchars($text_tooltip) ?>')"
                              onmouseout="hideTip()">
                             <i class="bi <?= $icono ?> fs-4"></i>
                             <?php if ($info['ocupado']): ?>
                                 <small class="d-block mt-1 fw-bold">Ocupado</small>
+                            <?php elseif (!$habilitado): ?>
+                                <small class="d-block mt-1" style="font-size:0.65rem">No disp.</small>
                             <?php endif; ?>
                         </div>
                     <?php endforeach; ?>
@@ -257,7 +353,7 @@ function getEstadoHorario($hora, $reservas) {
         function gestionarReserva(hora, salonId, ocupado) {
             if (ocupado) return;
             const fecha = document.getElementById('fecha').value;
-            window.location.href = `nueva_reserva_v2.php?salon_id=${salonId}&fecha=${fecha}&hora_inicio=${hora}`;
+            window.location.href = `nueva_reserva.php?salon_id=${salonId}&fecha=${fecha}&hora_inicio=${hora}`;
         }
 
         function cambiarDia(direccion) {
