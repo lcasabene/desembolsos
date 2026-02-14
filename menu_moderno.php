@@ -518,7 +518,8 @@ $avatar = $_SESSION['user_email'] ?? '';
 
     <!-- Main Content -->
     <main class="main-content">
-        <!-- Header -->
+        <?php if ($rol === 'Admin'): ?>
+        <!-- Header (solo admin) -->
         <div class="content-header">
             <div class="header-content">
                 <h1>Bienvenido, <?= htmlspecialchars($nombre) ?></h1>
@@ -526,7 +527,7 @@ $avatar = $_SESSION['user_email'] ?? '';
             </div>
         </div>
 
-        <!-- Statistics -->
+        <!-- Statistics (solo admin) -->
         <div class="stats-row">
             <div class="stat-card">
                 <div class="stat-icon primary">
@@ -560,6 +561,7 @@ $avatar = $_SESSION['user_email'] ?? '';
                 <div class="stat-label">Fecha Actual</div>
             </div>
         </div>
+        <?php endif; ?>
 
         <!-- Modules Grid -->
         <div class="modules-grid">
@@ -577,7 +579,7 @@ $avatar = $_SESSION['user_email'] ?? '';
             <?php endif; ?>
 
             <?php if (in_array('Instalaciones', $modulos)): ?>
-            <a href="menu_instalaciones.php" class="module-card">
+            <a href="menu_instalaciones_moderno.php" class="module-card">
                 <div class="module-icon instalaciones">
                     <i class="bi bi-building"></i>
                 </div>

@@ -448,7 +448,8 @@ $avatar = $_SESSION['user_email'] ?? '';
         </div>
     </nav>
 
-    <!-- Hero Section -->
+    <?php if ($rol === 'Admin'): ?>
+    <!-- Hero Section (solo admin) -->
     <section class="hero-section">
         <div class="hero-content">
             <h1 class="hero-title">
@@ -494,6 +495,7 @@ $avatar = $_SESSION['user_email'] ?? '';
             <div class="stat-label">Mis Reservas</div>
         </div>
     </div>
+    <?php endif; ?>
 
     <!-- Features Grid -->
     <div class="features-grid">

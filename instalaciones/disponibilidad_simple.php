@@ -105,7 +105,7 @@ function esHorarioHabilitado($hora, $dia_semana, $horarios_permitidos, $es_feria
         $fin_ts = strtotime($rango['hora_fin']);
         $dias = json_decode($rango['dias_semana'], true) ?? [];
         
-        if (in_array($dia_semana, $dias) && $hora_ts >= $inicio_ts && $hora_ts < $fin_ts) {
+        if (in_array($dia_semana, $dias) && $hora_ts >= $inicio_ts && $hora_ts <= $fin_ts) {
             return true;
         }
     }
@@ -153,9 +153,12 @@ function esHorarioHabilitado($hora, $dia_semana, $horarios_permitidos, $es_feria
             background-color: #007bff;
             color: white;
             text-align: center;
-            padding: 15px 5px;
-            font-size: 0.85rem;
+            padding: 18px 8px;
+            font-size: 1.1rem;
+            font-weight: bold;
             text-transform: uppercase;
+            letter-spacing: 0.5px;
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.2);
         }
 
         .horario-cell {
@@ -271,7 +274,6 @@ function esHorarioHabilitado($hora, $dia_semana, $horarios_permitidos, $es_feria
             <span><span style="display:inline-block;width:16px;height:16px;background:var(--bg-disponible);border:1px solid #ccc;vertical-align:middle"></span> Disponible</span>
             <span><span style="display:inline-block;width:16px;height:16px;background:var(--bg-ocupado);border:1px solid #ccc;vertical-align:middle"></span> Reservado (aprobada)</span>
             <span><span style="display:inline-block;width:16px;height:16px;background:var(--bg-pendiente);border:1px solid #ccc;vertical-align:middle"></span> Reservado (pendiente)</span>
-            <span><span style="display:inline-block;width:16px;height:16px;background:#e9ecef;border:1px solid #ccc;vertical-align:middle"></span> No habilitado</span>
             <?php if (!empty($horarios_permitidos)): ?>
                 <?php 
                 $dias_nombres = [1 => 'Lun', 2 => 'Mar', 3 => 'Mié', 4 => 'Jue', 5 => 'Vie', 6 => 'Sáb', 7 => 'Dom'];
@@ -296,20 +298,17 @@ function esHorarioHabilitado($hora, $dia_semana, $horarios_permitidos, $es_feria
                     </div>
                 <?php endforeach; ?>
 
-                <?php foreach ($horarios as $h): ?>
+                <?php foreach ($horarios as $h): 
+                    // Si hay horarios configurados, ocultar las franjas no habilitadas
+                    if (!esHorarioHabilitado($h['inicio'], $dia_semana_sel, $horarios_permitidos, $es_feriado)) {
+                        continue;
+                    }
+                ?>
                     <div class="grid-cell-hora"><?= $h['display'] ?></div>
                     <?php foreach ($salones_mostrar as $salon): 
-                        $habilitado = esHorarioHabilitado($h['inicio'], $dia_semana_sel, $horarios_permitidos, $es_feriado);
                         $info = getEstadoHorario($h['inicio'], $reservas_por_salon[$salon['id']] ?? []);
                         
-                        if (!$habilitado) {
-                            $clase = 'no-habilitado';
-                            $icono = 'bi-dash';
-                            $text_tooltip = $es_feriado 
-                                ? "FERIADO: $nombre_feriado\nNo se permiten reservas" 
-                                : "Horario no habilitado\nFuera de franja permitida";
-                            $clickable = false;
-                        } elseif ($info['ocupado']) {
+                        if ($info['ocupado']) {
                             $clase = 'ocupado-' . $info['estado'];
                             $icono = 'bi-x-lg';
                             $text_tooltip = "RESERVADO\nUsuario: {$info['usuario']}\nMotivo: {$info['motivo']}\nSalón: {$salon['nombre']}";
@@ -331,8 +330,6 @@ function esHorarioHabilitado($hora, $dia_semana, $horarios_permitidos, $es_feria
                             <i class="bi <?= $icono ?> fs-4"></i>
                             <?php if ($info['ocupado']): ?>
                                 <small class="d-block mt-1 fw-bold">Ocupado</small>
-                            <?php elseif (!$habilitado): ?>
-                                <small class="d-block mt-1" style="font-size:0.65rem">No disp.</small>
                             <?php endif; ?>
                         </div>
                     <?php endforeach; ?>

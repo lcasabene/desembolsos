@@ -36,13 +36,17 @@ if ($es_admin) {
 }
 
 // Obtener configuración de horarios permitidos (compatible con ambas tablas)
+$horarios_config = [];
 try {
     $stmt = $pdo->query("SELECT * FROM configuracion_horarios WHERE estado = 'activo' ORDER BY hora_inicio");
     $horarios_config = $stmt->fetchAll(PDO::FETCH_ASSOC);
 } catch (PDOException $e) {
-    // Si no existe configuracion_horarios, usar rangos_horarios
-    $stmt = $pdo->query("SELECT * FROM rangos_horarios WHERE estado = 'activo' ORDER BY hora_inicio");
-    $horarios_config = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    try {
+        $stmt = $pdo->query("SELECT * FROM rangos_horarios WHERE estado = 'activo' ORDER BY hora_inicio");
+        $horarios_config = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    } catch (PDOException $e2) {
+        // Ninguna tabla de horarios existe
+    }
 }
 
 // Procesar formulario
@@ -121,32 +125,50 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     // Verificar que el horario esté dentro de los rangos permitidos
     if (empty($errores)) {
-        $dia_semana = date('N', strtotime($fecha)); // 1=Lunes, 7=Domingo
+        $dia_semana = (int)date('N', strtotime($fecha)); // 1=Lunes, 7=Domingo
+        $hay_config_horarios = false;
+        $horarios = [];
         
         try {
-            $stmt = $pdo->prepare("SELECT * FROM configuracion_horarios WHERE estado = 'activo' AND ? BETWEEN hora_inicio AND hora_fin");
-            $stmt->execute([$hora_inicio]);
+            $stmt = $pdo->query("SELECT * FROM configuracion_horarios WHERE estado = 'activo'");
+            $horarios = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            if (!empty($horarios)) $hay_config_horarios = true;
         } catch (PDOException $e) {
-            // Si no existe configuracion_horarios, usar rangos_horarios
-            $stmt = $pdo->prepare("SELECT * FROM rangos_horarios WHERE estado = 'activo' AND ? BETWEEN hora_inicio AND hora_fin");
-            $stmt->execute([$hora_inicio]);
-        }
-        $horarios = $stmt->fetchAll(PDO::FETCH_ASSOC);
-        
-        $horario_valido = false;
-        foreach ($horarios as $horario) {
-            $dias_permitidos = json_decode($horario['dias_semana'], true) ?? [];
-            if (in_array($dia_semana, $dias_permitidos)) {
-                // Verificar que el horario completo esté dentro del rango
-                if ($hora_fin <= $horario['hora_fin']) {
-                    $horario_valido = true;
-                    break;
-                }
+            try {
+                $stmt = $pdo->query("SELECT * FROM rangos_horarios WHERE estado = 'activo'");
+                $horarios = $stmt->fetchAll(PDO::FETCH_ASSOC);
+                if (!empty($horarios)) $hay_config_horarios = true;
+            } catch (PDOException $e2) {
+                // Ninguna tabla existe, no validar horarios
             }
         }
         
-        if (!$horario_valido) {
-            $errores[] = "El horario seleccionado no está disponible. Consulta los horarios permitidos.";
+        // Solo validar si hay horarios configurados
+        if ($hay_config_horarios) {
+            $horario_valido = false;
+            $hora_inicio_min = (int)substr($hora_inicio, 0, 2) * 60 + (int)substr($hora_inicio, 3, 2);
+            $hora_fin_min = (int)substr($hora_fin, 0, 2) * 60 + (int)substr($hora_fin, 3, 2);
+            
+            foreach ($horarios as $horario) {
+                $dias_permitidos = json_decode($horario['dias_semana'], true) ?? [];
+                // Comparar como enteros para evitar problemas de tipo
+                $dias_permitidos = array_map('intval', $dias_permitidos);
+                
+                if (in_array($dia_semana, $dias_permitidos)) {
+                    $config_inicio_min = (int)substr($horario['hora_inicio'], 0, 2) * 60 + (int)substr($horario['hora_inicio'], 3, 2);
+                    $config_fin_min = (int)substr($horario['hora_fin'], 0, 2) * 60 + (int)substr($horario['hora_fin'], 3, 2);
+                    
+                    // Verificar que todo el rango solicitado esté dentro del rango permitido
+                    if ($hora_inicio_min >= $config_inicio_min && $hora_fin_min <= $config_fin_min) {
+                        $horario_valido = true;
+                        break;
+                    }
+                }
+            }
+            
+            if (!$horario_valido) {
+                $errores[] = "El horario seleccionado no está dentro de los rangos permitidos. Consulta los horarios disponibles.";
+            }
         }
     }
 
@@ -614,7 +636,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     if (data.disponible) {
                         disponibilidadDiv.innerHTML = '<span class="text-success"><i class="bi bi-check-circle"></i> Disponible</span>';
                     } else {
-                        disponibilidadDiv.innerHTML = '<span class="text-danger"><i class="bi bi-x-circle"></i> No disponible</span>';
+                        const motivo = data.motivo ? ': ' + data.motivo : '';
+                        disponibilidadDiv.innerHTML = '<span class="text-danger"><i class="bi bi-x-circle"></i> No disponible' + motivo + '</span>';
                     }
                 })
                 .catch(error => {
