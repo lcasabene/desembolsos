@@ -276,6 +276,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $stmt->execute([$salon_id, $usuario_seleccionado, $fecha, $hora_inicio, $hora_fin, $motivo, $descripcion, $estado, $observaciones]);
         } else {
             // Crear reservas recurrentes con validación de conflictos
+            $grupo_recurrente = bin2hex(random_bytes(16)); // ID único para el grupo
             $fecha_actual = new DateTime($fecha);
             $fecha_fin_rec = new DateTime($fecha_fin_recurrente);
             $reservas_creadas = 0;
@@ -317,8 +318,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         
                         if (!$hay_conflicto) {
                             $obs_rec = $observaciones ?: '';
-                            $stmt = $pdo->prepare("INSERT INTO reservas (salon_id, usuario_id, fecha, hora_inicio, hora_fin, motivo, descripcion, estado, observaciones) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
-                            $stmt->execute([$salon_id, $usuario_seleccionado, $fecha_formateada, $hora_inicio, $hora_fin, $motivo, $descripcion, $estado, $obs_rec]);
+                            $stmt = $pdo->prepare("INSERT INTO reservas (salon_id, usuario_id, fecha, hora_inicio, hora_fin, motivo, descripcion, estado, observaciones, grupo_recurrente) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+                            $stmt->execute([$salon_id, $usuario_seleccionado, $fecha_formateada, $hora_inicio, $hora_fin, $motivo, $descripcion, $estado, $obs_rec, $grupo_recurrente]);
                             $reservas_creadas++;
                         }
                     }

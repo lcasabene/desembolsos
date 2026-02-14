@@ -126,9 +126,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     }
 }
 
+// Filtro por fecha
+$filtro_fecha = $_GET['fecha'] ?? '';
+
 // Obtener reservas (todas si es admin/portero, solo las del usuario si es regular)
-$where_clause = $es_admin_o_portero ? "" : "WHERE r.usuario_id = ?";
-$params = $es_admin_o_portero ? [] : [$usuario_id];
+$conditions = [];
+$params = [];
+
+if (!$es_admin_o_portero) {
+    $conditions[] = "r.usuario_id = ?";
+    $params[] = $usuario_id;
+}
+
+if (!empty($filtro_fecha)) {
+    $conditions[] = "r.fecha = ?";
+    $params[] = $filtro_fecha;
+}
+
+$where_clause = !empty($conditions) ? "WHERE " . implode(" AND ", $conditions) : "";
 
 $select_fields = $es_admin_o_portero ? "r.*, s.nombre as salon_nombre, s.numero as salon_numero, u.nombre as usuario_nombre" : "r.*, s.nombre as salon_nombre, s.numero as salon_numero";
 $join_clause = $es_admin_o_portero ? "JOIN usuarios u ON r.usuario_id = u.id" : "";
@@ -314,7 +329,17 @@ $reservas = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
         <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
             <h2 class="mb-0"><i class="bi bi-list-check"></i> Mis Reservas</h2>
-            <div class="d-flex gap-2 flex-wrap">
+            <div class="d-flex gap-2 flex-wrap align-items-center">
+                <form class="d-flex gap-2 align-items-center" method="GET">
+                    <label class="form-label mb-0 fw-bold small text-nowrap">Filtrar fecha:</label>
+                    <input type="date" class="form-control form-control-sm" name="fecha" 
+                           value="<?= htmlspecialchars($filtro_fecha) ?>" onchange="this.form.submit()" style="width:160px">
+                    <?php if (!empty($filtro_fecha)): ?>
+                        <a href="mis_reservas.php" class="btn btn-sm btn-outline-secondary" title="Limpiar filtro">
+                            <i class="bi bi-x-lg"></i>
+                        </a>
+                    <?php endif; ?>
+                </form>
                 <?php if ($es_admin_o_portero): ?>
                 <a href="configuracion_horarios.php" class="btn btn-outline-warning">
                     <i class="bi bi-clock"></i> Configurar Horarios
@@ -399,6 +424,9 @@ $reservas = $stmt->fetchAll(PDO::FETCH_ASSOC);
                                 </td>
                                 <td>
                                     <?= htmlspecialchars($reserva['hora_inicio']) ?> - <?= htmlspecialchars($reserva['hora_fin']) ?>
+                                    <?php if (!empty($reserva['grupo_recurrente'])): ?>
+                                        <span class="badge bg-info ms-1" title="Reserva recurrente"><i class="bi bi-arrow-repeat"></i></span>
+                                    <?php endif; ?>
                                 </td>
                                 <td><?= htmlspecialchars($reserva['motivo']) ?></td>
                                 <td>
@@ -511,6 +539,9 @@ $reservas = $stmt->fetchAll(PDO::FETCH_ASSOC);
                             ?>
                             <div class="mb-2">
                                 <span class="badge bg-<?= $estado_class ?>"><?= htmlspecialchars($reserva['estado']) ?></span>
+                                <?php if (!empty($reserva['grupo_recurrente'])): ?>
+                                    <span class="badge bg-info ms-1"><i class="bi bi-arrow-repeat"></i> Recurrente</span>
+                                <?php endif; ?>
                             </div>
                             
                             <?php if ($reserva['motivo']): ?>

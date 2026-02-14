@@ -62,6 +62,25 @@ if (!$es_admin && $ahora >= $limite) {
     exit;
 }
 
+// Verificar si pertenece a un grupo recurrente
+$es_grupo_recurrente = !empty($reserva['grupo_recurrente']);
+$reservas_grupo = [];
+$total_grupo = 0;
+$futuras_grupo = 0;
+
+if ($es_grupo_recurrente) {
+    $stmt = $pdo->prepare("
+        SELECT id, fecha, hora_inicio, hora_fin, estado 
+        FROM reservas 
+        WHERE grupo_recurrente = ? AND estado IN ('pendiente', 'aprobada')
+        ORDER BY fecha
+    ");
+    $stmt->execute([$reserva['grupo_recurrente']]);
+    $reservas_grupo = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    $total_grupo = count($reservas_grupo);
+    $futuras_grupo = count(array_filter($reservas_grupo, fn($r) => $r['fecha'] >= date('Y-m-d')));
+}
+
 // Obtener configuración
 $stmt = $pdo->query("SELECT parametro, valor FROM configuracion_instalaciones");
 $config = [];
@@ -85,14 +104,46 @@ try {
 // Procesar formulario
 $errores = [];
 $exito = false;
+$msg_exito = '';
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+// Procesar cancelación de grupo recurrente
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'cancelar_grupo') {
+    if ($es_grupo_recurrente) {
+        $editor = $es_admin ? 'admin' : 'usuario';
+        $stmt = $pdo->prepare("
+            UPDATE reservas 
+            SET estado = 'cancelada', 
+                observaciones = CONCAT(IFNULL(observaciones, ''), '\nCancelación de grupo recurrente por $editor el: ', NOW())
+            WHERE grupo_recurrente = ? AND fecha >= CURDATE() AND estado IN ('pendiente', 'aprobada')
+        ");
+        $stmt->execute([$reserva['grupo_recurrente']]);
+        $canceladas = $stmt->rowCount();
+        
+        $exito = true;
+        $msg_exito = "Se cancelaron $canceladas reservas del grupo recurrente.";
+        
+        // Recargar reserva
+        $stmt = $pdo->prepare("SELECT r.*, s.nombre as salon_nombre, s.numero as salon_numero FROM reservas r JOIN salones s ON r.salon_id = s.id WHERE r.id = ?");
+        $stmt->execute([$reserva_id]);
+        $reserva = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        // Recargar grupo
+        $stmt = $pdo->prepare("SELECT id, fecha, hora_inicio, hora_fin, estado FROM reservas WHERE grupo_recurrente = ? AND estado IN ('pendiente', 'aprobada') ORDER BY fecha");
+        $stmt->execute([$reserva['grupo_recurrente']]);
+        $reservas_grupo = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        $total_grupo = count($reservas_grupo);
+        $futuras_grupo = count(array_filter($reservas_grupo, fn($r) => $r['fecha'] >= date('Y-m-d')));
+    }
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && (!isset($_POST['action']) || $_POST['action'] !== 'cancelar_grupo')) {
     $salon_id = $_POST['salon_id'] ?? $reserva['salon_id'];
     $fecha = $_POST['fecha'] ?? '';
     $hora_inicio = $_POST['hora_inicio'] ?? '';
     $hora_fin = $_POST['hora_fin'] ?? '';
     $motivo = $_POST['motivo'] ?? '';
     $descripcion = $_POST['descripcion'] ?? '';
+    $aplicar_grupo = isset($_POST['aplicar_grupo']) && $_POST['aplicar_grupo'] === '1';
 
     // Validaciones
     if (empty($fecha)) $errores[] = "Debe seleccionar una fecha";
@@ -179,6 +230,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // Guardar cambios
     if (empty($errores)) {
         $editor = $es_admin ? 'admin' : 'usuario';
+        
+        // Editar esta reserva individual
         $stmt = $pdo->prepare("
             UPDATE reservas 
             SET salon_id = ?, fecha = ?, hora_inicio = ?, hora_fin = ?, motivo = ?, descripcion = ?,
@@ -187,7 +240,54 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         ");
         $stmt->execute([$salon_id, $fecha, $hora_inicio, $hora_fin, $motivo, $descripcion, $reserva_id]);
 
+        // Si se pidió aplicar al grupo recurrente, actualizar horario en todas las futuras
+        $grupo_actualizadas = 0;
+        $grupo_conflictos = [];
+        if ($aplicar_grupo && $es_grupo_recurrente) {
+            $stmt = $pdo->prepare("
+                SELECT id, fecha FROM reservas 
+                WHERE grupo_recurrente = ? AND id != ? AND fecha >= CURDATE()
+                AND estado IN ('pendiente', 'aprobada')
+            ");
+            $stmt->execute([$reserva['grupo_recurrente'], $reserva_id]);
+            $otras_reservas = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            foreach ($otras_reservas as $otra) {
+                // Verificar conflictos para cada fecha del grupo
+                $stmt_conf = $pdo->prepare("
+                    SELECT COUNT(*) FROM reservas 
+                    WHERE salon_id = ? AND fecha = ? AND estado IN ('aprobada', 'pendiente') AND id != ?
+                    AND ((hora_inicio < ? AND hora_fin > ?) OR (hora_inicio < ? AND hora_fin > ?))
+                ");
+                $stmt_conf->execute([$salon_id, $otra['fecha'], $otra['id'], $hora_fin, $hora_inicio, $hora_fin, $hora_inicio]);
+                
+                if ($stmt_conf->fetchColumn() == 0) {
+                    $stmt_upd = $pdo->prepare("
+                        UPDATE reservas 
+                        SET salon_id = ?, hora_inicio = ?, hora_fin = ?, motivo = ?, descripcion = ?,
+                            observaciones = CONCAT(IFNULL(observaciones, ''), '\nEditada en grupo por $editor el: ', NOW())
+                        WHERE id = ?
+                    ");
+                    $stmt_upd->execute([$salon_id, $hora_inicio, $hora_fin, $motivo, $descripcion, $otra['id']]);
+                    $grupo_actualizadas++;
+                } else {
+                    $grupo_conflictos[] = date('d/m/Y', strtotime($otra['fecha']));
+                }
+            }
+        }
+
         $exito = true;
+        $msg_exito = "Reserva actualizada exitosamente.";
+        if ($aplicar_grupo && $es_grupo_recurrente) {
+            if ($grupo_actualizadas > 0) {
+                $msg_exito .= " Se actualizaron $grupo_actualizadas reservas del grupo.";
+            }
+            if (!empty($grupo_conflictos)) {
+                $msg_exito .= " No se pudieron actualizar " . count($grupo_conflictos) . " reservas por conflictos de horario: " . implode(', ', array_slice($grupo_conflictos, 0, 5));
+                if (count($grupo_conflictos) > 5) $msg_exito .= "...";
+            }
+        }
+        
         // Recargar datos de la reserva
         $stmt = $pdo->prepare("
             SELECT r.*, s.nombre as salon_nombre, s.numero as salon_numero
@@ -227,7 +327,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         <?php if ($exito): ?>
             <div class="alert alert-success alert-dismissible fade show">
-                <i class="bi bi-check-circle me-2"></i>Reserva actualizada exitosamente.
+                <i class="bi bi-check-circle me-2"></i><?= $msg_exito ?>
                 <a href="mis_reservas.php" class="alert-link ms-2">Volver a mis reservas</a>
                 <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
             </div>
@@ -326,15 +426,49 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 <textarea class="form-control" id="descripcion" name="descripcion" rows="3"><?= htmlspecialchars($_POST['descripcion'] ?? $reserva['descripcion'] ?? '') ?></textarea>
                             </div>
 
+                            <?php if ($es_grupo_recurrente && $futuras_grupo > 1): ?>
+                            <div class="card border-info mb-3">
+                                <div class="card-header bg-info text-white py-2">
+                                    <i class="bi bi-arrow-repeat me-1"></i>
+                                    <strong>Reserva Recurrente</strong> - <?= $total_grupo ?> reservas (<?= $futuras_grupo ?> futuras)
+                                </div>
+                                <div class="card-body">
+                                    <input type="hidden" name="aplicar_grupo" id="aplicarGrupoInput" value="0">
+                                    <div class="d-flex flex-column gap-2">
+                                        <button type="submit" class="btn btn-primary" onclick="document.getElementById('aplicarGrupoInput').value='0'">
+                                            <i class="bi bi-pencil me-1"></i> Guardar solo esta reserva
+                                        </button>
+                                        <button type="submit" class="btn btn-warning" onclick="document.getElementById('aplicarGrupoInput').value='1'"
+                                                title="Se actualizan horario, salón, motivo y descripción en todas las futuras. La fecha de cada una se mantiene.">
+                                            <i class="bi bi-arrow-repeat me-1"></i> Guardar cambios en todo el grupo
+                                        </button>
+                                    </div>
+                                    <small class="text-muted d-block mt-2">
+                                        "Todo el grupo" actualiza horario, salón, motivo y descripción en las <?= $futuras_grupo ?> reservas futuras. Se validan conflictos en cada fecha.
+                                    </small>
+                                </div>
+                            </div>
+                            <?php else: ?>
                             <div class="d-grid gap-2 d-md-flex justify-content-md-end">
                                 <a href="mis_reservas.php" class="btn btn-secondary">
-                                    <i class="bi bi-x-circle"></i> Cancelar
+                                    <i class="bi bi-x-circle"></i> Volver
                                 </a>
                                 <button type="submit" class="btn btn-primary">
                                     <i class="bi bi-check-circle"></i> Guardar Cambios
                                 </button>
                             </div>
+                            <?php endif; ?>
                         </form>
+
+                        <?php if ($es_grupo_recurrente && $futuras_grupo > 0): ?>
+                        <hr>
+                        <form method="POST" onsubmit="return confirm('¿Estás seguro de cancelar TODAS las reservas futuras de este grupo recurrente? Esta acción no se puede deshacer.')">
+                            <input type="hidden" name="action" value="cancelar_grupo">
+                            <button type="submit" class="btn btn-outline-danger w-100">
+                                <i class="bi bi-trash me-1"></i> Cancelar todo el grupo recurrente (<?= $futuras_grupo ?> reservas futuras)
+                            </button>
+                        </form>
+                        <?php endif; ?>
                     </div>
                 </div>
             </div>
@@ -356,6 +490,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         </ul>
                     </div>
                 </div>
+
+                <?php if ($es_grupo_recurrente && !empty($reservas_grupo)): ?>
+                <div class="card shadow-sm mt-3">
+                    <div class="card-header bg-info text-white">
+                        <h6 class="mb-0"><i class="bi bi-arrow-repeat"></i> Reservas del Grupo (<?= $total_grupo ?>)</h6>
+                    </div>
+                    <div class="card-body p-0">
+                        <div class="list-group list-group-flush" style="max-height: 300px; overflow-y: auto;">
+                            <?php foreach ($reservas_grupo as $rg): 
+                                $es_actual = ($rg['id'] == $reserva_id);
+                                $es_pasada = ($rg['fecha'] < date('Y-m-d'));
+                            ?>
+                                <div class="list-group-item small <?= $es_actual ? 'list-group-item-primary' : ($es_pasada ? 'text-muted' : '') ?>">
+                                    <div class="d-flex justify-content-between align-items-center">
+                                        <span>
+                                            <?= $es_actual ? '<i class="bi bi-arrow-right-circle-fill me-1"></i>' : '' ?>
+                                            <?= date('d/m/Y', strtotime($rg['fecha'])) ?>
+                                            <small>(<?= substr($rg['hora_inicio'], 0, 5) ?> - <?= substr($rg['hora_fin'], 0, 5) ?>)</small>
+                                        </span>
+                                        <?php if (!$es_actual && !$es_pasada): ?>
+                                            <a href="editar_reserva.php?id=<?= $rg['id'] ?>" class="btn btn-outline-primary btn-sm py-0 px-1" title="Editar esta">
+                                                <i class="bi bi-pencil"></i>
+                                            </a>
+                                        <?php endif; ?>
+                                    </div>
+                                </div>
+                            <?php endforeach; ?>
+                        </div>
+                    </div>
+                </div>
+                <?php endif; ?>
             </div>
         </div>
     </div>
